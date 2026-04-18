@@ -45,7 +45,7 @@ class ToTensor(object):
     def __call__(self, sample):
         data = {}
         if len(sample['img'].shape) < 3:
-            sample['img'] = np.expand_dims(img, -1)
+            sample['img'] = np.expand_dims(sample['img'], -1)
         for key in self.keys:
             if key == 'img_metas' or key == 'gt_masks' or key == 'lane_line':
                 data[key] = sample[key]
@@ -290,6 +290,90 @@ class Normalize(object):
             img = img / np.array(s)[np.newaxis, np.newaxis, ...]
         sample['img'] = img
 
+        return sample
+
+
+@PROCESS.register_module
+class RainRobustAug(object):
+    """Image-only augmentations tailored for rainy lane scenes."""
+
+    def __init__(self,
+                 p=0.8,
+                 reflection_p=0.35,
+                 occlusion_p=0.25,
+                 contrast_p=0.5,
+                 cfg=None):
+        self.p = p
+        self.reflection_p = reflection_p
+        self.occlusion_p = occlusion_p
+        self.contrast_p = contrast_p
+
+    def _apply_contrast(self, img):
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        v = hsv[:, :, 2]
+        gamma = random.uniform(0.75, 1.35)
+        v = np.power(v.astype(np.float32) / 255.0, gamma) * 255.0
+        hsv[:, :, 2] = np.clip(v, 0, 255).astype(np.uint8)
+        img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+        if random.random() < 0.5:
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=random.uniform(1.5, 3.0),
+                                    tileGridSize=(8, 8))
+            lab = cv2.merge((clahe.apply(l), a, b))
+            img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        return img
+
+    def _add_reflection(self, img):
+        h, w = img.shape[:2]
+        overlay = np.zeros_like(img, dtype=np.float32)
+        mask = np.zeros((h, w), dtype=np.float32)
+        num_regions = random.randint(1, 4)
+
+        for _ in range(num_regions):
+            center = (random.randint(0, w - 1), random.randint(h // 2, h - 1))
+            axes = (random.randint(w // 20, w // 8),
+                    random.randint(h // 30, h // 12))
+            angle = random.randint(0, 180)
+            strength = random.uniform(35, 90)
+            cv2.ellipse(mask, center, axes, angle, 0, 360, 1.0, -1)
+            cv2.ellipse(overlay, center, axes, angle, 0, 360,
+                        (strength, strength, strength), -1)
+
+        blur_size = random.choice([31, 41, 51])
+        mask = cv2.GaussianBlur(mask, (blur_size, blur_size), 0)
+        overlay = cv2.GaussianBlur(overlay, (blur_size, blur_size), 0)
+        overlay *= mask[..., None] * random.uniform(0.35, 0.6)
+        img = np.clip(img.astype(np.float32) + overlay, 0, 255)
+        return img.astype(np.uint8)
+
+    def _add_occlusion(self, img):
+        h, w = img.shape[:2]
+        num_blocks = random.randint(1, 3)
+        for _ in range(num_blocks):
+            block_w = random.randint(max(20, w // 20), max(40, w // 8))
+            block_h = random.randint(max(20, h // 20), max(40, h // 8))
+            x1 = random.randint(0, max(0, w - block_w))
+            y1 = random.randint(h // 3, max(h // 3, h - block_h))
+            patch = img[y1:y1 + block_h, x1:x1 + block_w]
+            fill = patch.mean(axis=(0, 1), keepdims=True)
+            img[y1:y1 + block_h, x1:x1 + block_w] = fill.astype(np.uint8)
+        return img
+
+    def __call__(self, sample):
+        if random.random() >= self.p:
+            return sample
+
+        img = sample['img'].astype(np.uint8)
+        if random.random() < self.contrast_p:
+            img = self._apply_contrast(img)
+        if random.random() < self.reflection_p:
+            img = self._add_reflection(img)
+        if random.random() < self.occlusion_p:
+            img = self._add_occlusion(img)
+
+        sample['img'] = img
         return sample
 
 

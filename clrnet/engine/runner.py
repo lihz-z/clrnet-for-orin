@@ -23,6 +23,7 @@ class Runner(object):
         np.random.seed(cfg.seed)
         random.seed(cfg.seed)
         self.cfg = cfg
+        self._prepare_runtime_cfg()
         self.recorder = build_recorder(self.cfg)
         self.net = build_net(self.cfg)
         self.net = MMDataParallel(self.net,
@@ -30,10 +31,23 @@ class Runner(object):
         self.recorder.logger.info('Network: \n' + str(self.net))
         self.resume()
         self.optimizer = build_optimizer(self.cfg, self.net)
-        self.scheduler = build_scheduler(self.cfg, self.optimizer)
+        self.scheduler = None
+        if not self.cfg.haskey('auto_calc_total_iter') or not self.cfg.auto_calc_total_iter:
+            self.scheduler = build_scheduler(self.cfg, self.optimizer)
         self.metric = 0.
         self.val_loader = None
         self.test_loader = None
+
+    def _prepare_runtime_cfg(self):
+        """Fill fields that other components expect during early init."""
+        if self.cfg.haskey('auto_calc_total_iter') and self.cfg.auto_calc_total_iter:
+            if not self.cfg.haskey('steps_per_epoch'):
+                if self.cfg.haskey('train_img_num') and self.cfg.haskey('batch_size'):
+                    self.cfg.steps_per_epoch = max(
+                        1, int(np.ceil(self.cfg.train_img_num / self.cfg.batch_size)))
+                else:
+                    self.cfg.steps_per_epoch = 1
+            self.cfg.total_iter = max(1, self.cfg.steps_per_epoch * self.cfg.epochs)
 
     def to_cuda(self, batch):
         for k in batch:
@@ -80,7 +94,14 @@ class Runner(object):
         train_loader = build_dataloader(self.cfg.dataset.train,
                                         self.cfg,
                                         is_train=True)
-
+        if self.cfg.haskey('auto_calc_total_iter') and self.cfg.auto_calc_total_iter:
+            self.cfg.steps_per_epoch = len(train_loader)
+            self.cfg.total_iter = len(train_loader) * self.cfg.epochs
+            self.recorder.max_iter = self.cfg.total_iter
+            if self.cfg.scheduler.get('T_max', None) == 'auto':
+                self.cfg.scheduler.T_max = self.cfg.total_iter
+            self.scheduler = build_scheduler(self.cfg, self.optimizer)
+        print(f"Dataset length: {len(train_loader.dataset)}")
         self.recorder.logger.info('Start training...')
         start_epoch = 0
         if self.cfg.resume_from:
@@ -96,7 +117,7 @@ class Runner(object):
             if (epoch +
                     1) % self.cfg.eval_ep == 0 or epoch == self.cfg.epochs - 1:
                 self.validate()
-            if self.recorder.step >= self.cfg.total_iter:
+            if self.recorder.step >= self.cfg.total_iter:  
                 break
             if self.cfg.lr_update_by_epoch:
                 self.scheduler.step()

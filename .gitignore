@@ -23,3 +23,8 @@ tmp.*
 *.so
 build
 *.jpg
+__pycache__/
+*.pyc
+*.pyo
+*.pth
+work_dirs/

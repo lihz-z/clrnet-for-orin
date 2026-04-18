@@ -1,0 +1,457 @@
+2026-04-17 17:42:30,934 - clrnet.utils.recorder - INFO - Config: 
+net = dict(type='Detector')
+
+backbone = dict(
+    type='ResNetWrapper',
+    resnet='resnet34',
+    pretrained=True,
+    replace_stride_with_dilation=[False, False, False],
+    out_conv=False,
+)
+
+num_points = 72
+max_lanes = 4
+sample_y = range(589, 230, -20)
+
+heads = dict(type='CLRHead',
+             num_priors=192,
+             refine_layers=3,
+             fc_hidden_dim=64,
+             sample_points=36)
+
+iou_loss_weight = 2.
+cls_loss_weight = 2.
+xyt_loss_weight = 0.2
+seg_loss_weight = 1.0
+
+work_dirs = "work_dirs/clr/r34_rainlane_fgm_stage2"
+
+neck = dict(type='FPN',
+            in_channels=[128, 256, 512],
+            out_channels=64,
+            num_outs=3,
+            attention=False,
+            lrf_block=dict(
+                type='LRFBlock',
+                channels=64,
+                freq_gate_threshold=0.22,
+                direction_bins=4,
+                res_scale_init=0.05,
+                enable_freq=True,
+                enable_dir=True,
+                apply_levels=[1, 2]))
+
+test_parameters = dict(conf_threshold=0.35, nms_thres=50, nms_topk=max_lanes)
+
+epochs = 10
+batch_size = 24
+
+optimizer = dict(
+    type='AdamW',
+    lr=2e-4,
+    weight_decay=0.01,
+    param_groups=[
+        dict(patterns=['backbone'], lr_mult=0.3),
+        dict(patterns=['neck.lrf_block'], lr_mult=2.0),
+        dict(patterns=['heads'], lr_mult=1.2),
+    ])
+auto_calc_total_iter = True
+scheduler = dict(type='CosineAnnealingLR', T_max='auto')
+
+eval_ep = 1
+save_ep = 1
+
+img_norm = dict(mean=[103.939, 116.779, 123.68], std=[1., 1., 1.])
+ori_img_w = 1640
+ori_img_h = 590
+img_w = 800
+img_h = 320
+cut_height = 270
+
+train_process = [
+    dict(type='RainRobustAug',
+         p=0.85,
+         reflection_p=0.35,
+         occlusion_p=0.3,
+         contrast_p=0.6),
+    dict(
+        type='GenerateLaneLine',
+        transforms=[
+            dict(name='Resize',
+                 parameters=dict(size=dict(height=img_h, width=img_w)),
+                 p=1.0),
+            dict(name='HorizontalFlip', parameters=dict(p=1.0), p=0.5),
+            dict(name='ChannelShuffle', parameters=dict(p=1.0), p=0.1),
+            dict(name='MultiplyAndAddToBrightness',
+                 parameters=dict(mul=(0.8, 1.2), add=(-20, 20)),
+                 p=0.7),
+            dict(name='LinearContrast',
+                 parameters=dict(alpha=(0.75, 1.35)),
+                 p=0.6),
+            dict(name='AddToHueAndSaturation',
+                 parameters=dict(value=(-12, 12)),
+                 p=0.6),
+            dict(name='OneOf',
+                 transforms=[
+                     dict(name='MotionBlur', parameters=dict(k=(3, 7))),
+                     dict(name='MedianBlur', parameters=dict(k=(3, 5))),
+                     dict(name='GaussianBlur', parameters=dict(sigma=(0.0,
+                                                                      1.8)))
+                 ],
+                 p=0.3),
+            dict(name='Affine',
+                 parameters=dict(translate_percent=dict(x=(-0.08, 0.08),
+                                                        y=(-0.05, 0.05)),
+                                 rotate=(-8, 8),
+                                 scale=(0.85, 1.15)),
+                 p=0.7),
+            dict(name='Resize',
+                 parameters=dict(size=dict(height=img_h, width=img_w)),
+                 p=1.0),
+        ],
+    ),
+    dict(type='ToTensor', keys=['img', 'lane_line', 'seg']),
+]
+
+val_process = [
+    dict(type='GenerateLaneLine',
+         transforms=[
+             dict(name='Resize',
+                  parameters=dict(size=dict(height=img_h, width=img_w)),
+                  p=1.0),
+         ],
+         training=False),
+    dict(type='ToTensor', keys=['img']),
+]
+
+dataset_path = './data/RaniyLane'
+dataset_type = 'CULane'
+dataset = dict(train=dict(
+    type=dataset_type,
+    data_root=dataset_path,
+    split='train',
+    processes=train_process,
+),
+val=dict(
+    type=dataset_type,
+    data_root=dataset_path,
+    split='test',
+    processes=val_process,
+),
+test=dict(
+    type=dataset_type,
+    data_root=dataset_path,
+    split='test',
+    processes=val_process,
+))
+
+workers = 10
+log_interval = 200
+num_classes = 4 + 1
+ignore_label = 255
+bg_weight = 0.4
+lr_update_by_epoch = False
+
+2026-04-17 17:46:05,431 - clrnet.utils.recorder - INFO - Network: 
+MMDataParallel(
+  (module): Detector(
+    (backbone): ResNetWrapper(
+      (model): ResNet(
+        (conv1): Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        (relu): ReLU(inplace=True)
+        (maxpool): MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+        (layer1): Sequential(
+          (0): BasicBlock(
+            (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): BasicBlock(
+            (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): BasicBlock(
+            (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+        (layer2): Sequential(
+          (0): BasicBlock(
+            (conv1): Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (downsample): Sequential(
+              (0): Conv2d(64, 128, kernel_size=(1, 1), stride=(2, 2), bias=False)
+              (1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            )
+          )
+          (1): BasicBlock(
+            (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): BasicBlock(
+            (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): BasicBlock(
+            (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+        (layer3): Sequential(
+          (0): BasicBlock(
+            (conv1): Conv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (downsample): Sequential(
+              (0): Conv2d(128, 256, kernel_size=(1, 1), stride=(2, 2), bias=False)
+              (1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            )
+          )
+          (1): BasicBlock(
+            (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): BasicBlock(
+            (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): BasicBlock(
+            (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): BasicBlock(
+            (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): BasicBlock(
+            (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+        (layer4): Sequential(
+          (0): BasicBlock(
+            (conv1): Conv2d(256, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (downsample): Sequential(
+              (0): Conv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), bias=False)
+              (1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            )
+          )
+          (1): BasicBlock(
+            (conv1): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): BasicBlock(
+            (conv1): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (relu): ReLU(inplace=True)
+            (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+    )
+    (neck): FPN(
+      (lrf_block): LRFBlock(
+        (freq): FrequencyGate()
+        (dir): DirectionalAttention(
+          (dir_convs): ModuleList(
+            (0): Sequential(
+              (0): Conv2d(64, 64, kernel_size=(1, 5), stride=(1, 1), padding=(0, 2), groups=64, bias=False)
+              (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+              (2): ReLU(inplace=True)
+            )
+            (1): Sequential(
+              (0): Conv2d(64, 64, kernel_size=(5, 1), stride=(1, 1), padding=(2, 0), groups=64, bias=False)
+              (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+              (2): ReLU(inplace=True)
+            )
+            (2): Sequential(
+              (0): Sequential(
+                (0): Conv2d(64, 64, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1), groups=64, bias=False)
+                (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+                (2): ReLU(inplace=True)
+              )
+              (1): Sequential(
+                (0): Conv2d(64, 64, kernel_size=(3, 1), stride=(1, 1), padding=(1, 0), groups=64, bias=False)
+                (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+                (2): ReLU(inplace=True)
+              )
+            )
+            (3): Sequential(
+              (0): Sequential(
+                (0): Conv2d(64, 64, kernel_size=(3, 1), stride=(1, 1), padding=(1, 0), groups=64, bias=False)
+                (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+                (2): ReLU(inplace=True)
+              )
+              (1): Sequential(
+                (0): Conv2d(64, 64, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1), groups=64, bias=False)
+                (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+                (2): ReLU(inplace=True)
+              )
+            )
+          )
+          (attn_conv): Sequential(
+            (0): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+            (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (2): Sigmoid()
+          )
+        )
+      )
+      (lateral_convs): ModuleList(
+        (0): ConvModule(
+          (conv): Conv2d(128, 64, kernel_size=(1, 1), stride=(1, 1))
+        )
+        (1): ConvModule(
+          (conv): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1))
+        )
+        (2): ConvModule(
+          (conv): Conv2d(512, 64, kernel_size=(1, 1), stride=(1, 1))
+        )
+      )
+      (fpn_convs): ModuleList(
+        (0-2): 3 x ConvModule(
+          (conv): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+        )
+      )
+    )
+    (heads): CLRHead(
+      (prior_embeddings): Embedding(192, 3)
+      (seg_decoder): SegDecoder(
+        (dropout): Dropout2d(p=0.1, inplace=False)
+        (conv): Conv2d(192, 5, kernel_size=(1, 1), stride=(1, 1))
+      )
+      (reg_modules): ModuleList(
+        (0): Linear(in_features=64, out_features=64, bias=True)
+        (1): ReLU(inplace=True)
+        (2): Linear(in_features=64, out_features=64, bias=True)
+        (3): ReLU(inplace=True)
+      )
+      (cls_modules): ModuleList(
+        (0): Linear(in_features=64, out_features=64, bias=True)
+        (1): ReLU(inplace=True)
+        (2): Linear(in_features=64, out_features=64, bias=True)
+        (3): ReLU(inplace=True)
+      )
+      (roi_gather): ROIGather(
+        (f_key): ConvModule(
+          (conv): Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+          (bn): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          (activate): ReLU(inplace=True)
+        )
+        (f_query): Sequential(
+          (0): Conv1d(192, 192, kernel_size=(1,), stride=(1,), groups=192)
+          (1): ReLU()
+        )
+        (f_value): Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1))
+        (W): Conv1d(192, 192, kernel_size=(1,), stride=(1,), groups=192)
+        (resize): FeatureResize()
+        (convs): ModuleList(
+          (0-2): 3 x ConvModule(
+            (conv): Conv2d(64, 48, kernel_size=(9, 1), stride=(1, 1), padding=(4, 0), bias=False)
+            (bn): BatchNorm2d(48, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (activate): ReLU(inplace=True)
+          )
+        )
+        (catconv): ModuleList(
+          (0): ConvModule(
+            (conv): Conv2d(48, 64, kernel_size=(9, 1), stride=(1, 1), padding=(4, 0), bias=False)
+            (bn): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (activate): ReLU(inplace=True)
+          )
+          (1): ConvModule(
+            (conv): Conv2d(96, 64, kernel_size=(9, 1), stride=(1, 1), padding=(4, 0), bias=False)
+            (bn): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (activate): ReLU(inplace=True)
+          )
+          (2): ConvModule(
+            (conv): Conv2d(144, 64, kernel_size=(9, 1), stride=(1, 1), padding=(4, 0), bias=False)
+            (bn): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+            (activate): ReLU(inplace=True)
+          )
+        )
+        (fc): Linear(in_features=2304, out_features=64, bias=True)
+        (fc_norm): LayerNorm((64,), eps=1e-05, elementwise_affine=True)
+      )
+      (reg_layers): Linear(in_features=64, out_features=76, bias=True)
+      (cls_layers): Linear(in_features=64, out_features=2, bias=True)
+      (criterion): NLLLoss()
+    )
+  )
+)
+2026-04-17 17:46:05,434 - clrnet.utils.recorder - INFO - Build train loader...
+2026-04-17 17:46:05,449 - clrnet.datasets.base_dataset - INFO - Loading CULane annotations...
+2026-04-17 17:46:05,775 - clrnet.utils.recorder - INFO - Start training...
+pretrained model:  https://download.pytorch.org/models/resnet34-333f7ec4.pth
+Dataset length: 16832
+2026-04-17 17:46:11,059 - clrnet.utils.recorder - INFO - epoch: 0  step: 1  lr: 0.000060  loss: 16.8606  cls_loss: 6.2391  reg_xytl_loss: 3.4113  seg_loss: 5.2578  iou_loss: 1.9524  stage_0_acc: 37.7170  stage_1_acc: 43.7500  stage_2_acc: 45.5150  data: 1.7886  batch: 5.2826  eta: 10:17:58
+2026-04-17 17:47:46,463 - clrnet.utils.recorder - INFO - epoch: 0  step: 201  lr: 0.000060  loss: 3.0895  cls_loss: 0.6060  reg_xytl_loss: 0.7166  seg_loss: 0.3333  iou_loss: 1.4336  stage_0_acc: 98.4191  stage_1_acc: 98.4126  stage_2_acc: 98.4031  data: 0.0485  batch: 0.4755  eta: 0:56:54
+2026-04-17 17:49:20,601 - clrnet.utils.recorder - INFO - epoch: 0  step: 401  lr: 0.000060  loss: 2.1868  cls_loss: 0.4871  reg_xytl_loss: 0.5494  seg_loss: 0.2513  iou_loss: 0.8990  stage_0_acc: 98.0968  stage_1_acc: 97.9237  stage_2_acc: 97.8385  data: 0.0491  batch: 0.4827  eta: 0:53:35
+2026-04-17 17:50:54,555 - clrnet.utils.recorder - INFO - epoch: 0  step: 601  lr: 0.000059  loss: 1.8474  cls_loss: 0.4649  reg_xytl_loss: 0.4342  seg_loss: 0.2240  iou_loss: 0.7244  stage_0_acc: 97.6834  stage_1_acc: 97.4881  stage_2_acc: 97.3503  data: 0.0501  batch: 0.4646  eta: 0:51:23
+2026-04-17 17:51:42,675 - clrnet.utils.recorder - INFO - epoch: 0  step: 702  lr: 0.000059  loss: 1.7993  cls_loss: 0.4729  reg_xytl_loss: 0.4202  seg_loss: 0.2341  iou_loss: 0.6722  stage_0_acc: 97.5217  stage_1_acc: 97.3264  stage_2_acc: 97.2012  data: 0.0511  batch: 0.5175  eta: 0:50:32
+2026-04-17 17:51:43,050 - clrnet.datasets.base_dataset - INFO - Loading CULane annotations...
+Validate:   0%|                                                                                                                           | 0/302 [00:00<?, ?it/s]Validate:   0%|▍                                                                                                                  | 1/302 [00:00<03:58,  1.26it/s]Validate:   1%|▊                                                                                                                  | 2/302 [00:00<01:56,  2.57it/s]Validate:   1%|█▏                                                                                                                 | 3/302 [00:01<01:18,  3.79it/s]Validate:   1%|█▌                                                                                                                 | 4/302 [00:01<01:03,  4.68it/s]Validate:   2%|█▉                                                                                                                 | 5/302 [00:01<00:52,  5.65it/s]Validate:   2%|██▎                                                                                                                | 6/302 [00:01<00:46,  6.36it/s]Validate:   2%|██▋                                                                                                                | 7/302 [00:01<00:43,  6.83it/s]Validate:   3%|███                                                                                                                | 8/302 [00:01<00:40,  7.34it/s]Validate:   3%|███▍                                                                                                               | 9/302 [00:01<00:37,  7.81it/s]Validate:   3%|███▊                                                                                                              | 10/302 [00:01<00:37,  7.70it/s]Validate:   4%|████▏                                                                                                             | 11/302 [00:01<00:36,  7.89it/s]Validate:   4%|████▌                                                                                                             | 12/302 [00:02<00:36,  7.86it/s]Validate:   4%|████▉                                                                                                             | 13/302 [00:02<00:36,  7.84it/s]Validate:   5%|█████▎                                                                                                            | 14/302 [00:02<00:36,  7.98it/s]Validate:   5%|█████▋                                                                                                            | 15/302 [00:02<00:34,  8.22it/s]Validate:   5%|██████                                                                                                            | 16/302 [00:02<00:33,  8.48it/s]Validate:   6%|██████▍                                                                                                           | 17/302 [00:02<00:33,  8.52it/s]Validate:   6%|██████▊                                                                                                           | 18/302 [00:02<00:32,  8.65it/s]Validate:   6%|███████▏                                                                                                          | 19/302 [00:02<00:32,  8.80it/s]Validate:   7%|███████▌                                                                                                          | 20/302 [00:03<00:32,  8.76it/s]Validate:   7%|███████▉                                                                                                          | 21/302 [00:03<00:32,  8.67it/s]Validate:   7%|████████▎                                                                                                         | 22/302 [00:03<00:32,  8.59it/s]Validate:   8%|████████▋                                                                                                         | 23/302 [00:03<00:31,  8.88it/s]Validate:   8%|█████████                                                                                                         | 24/302 [00:03<00:31,  8.95it/s]Validate:   8%|█████████▍                                                                                                        | 25/302 [00:03<00:31,  8.84it/s]Validate:   9%|█████████▊                                                                                                        | 26/302 [00:03<00:30,  9.02it/s]Validate:   9%|██████████▏                                                                                                       | 27/302 [00:03<00:30,  8.89it/s]Validate:   9%|██████████▌                                                                                                       | 28/302 [00:03<00:30,  8.85it/s]Validate:  10%|██████████▉                                                                                                       | 29/302 [00:04<00:30,  8.84it/s]Validate:  10%|███████████▎                                                                                                      | 30/302 [00:04<00:30,  8.85it/s]Validate:  10%|███████████▋                                                                                                      | 31/302 [00:04<00:30,  8.92it/s]Validate:  11%|████████████                                                                                                      | 32/302 [00:04<00:30,  8.91it/s]Validate:  11%|████████████▍                                                                                                     | 33/302 [00:04<00:31,  8.42it/s]Validate:  11%|████████████▊                                                                                                     | 34/302 [00:04<00:33,  8.10it/s]Validate:  12%|█████████████▏                                                                                                    | 35/302 [00:04<00:31,  8.41it/s]Validate:  12%|█████████████▌                                                                                                    | 36/302 [00:04<00:30,  8.67it/s]Validate:  13%|██████████████▎                                                                                                   | 38/302 [00:05<00:29,  9.03it/s]Validate:  13%|██████████████▋                                                                                                   | 39/302 [00:05<00:29,  8.94it/s]Validate:  14%|███████████████▍                                                                                                  | 41/302 [00:05<00:27,  9.45it/s]Validate:  14%|███████████████▊                                                                                                  | 42/302 [00:05<00:27,  9.41it/s]Validate:  14%|████████████████▏                                                                                                 | 43/302 [00:05<00:28,  9.11it/s]Validate:  15%|████████████████▌                                                                                                 | 44/302 [00:05<00:28,  9.15it/s]Validate:  15%|████████████████▉                                                                                                 | 45/302 [00:05<00:28,  8.98it/s]Validate:  15%|█████████████████▎                                                                                                | 46/302 [00:05<00:27,  9.17it/s]Validate:  16%|██████████████████                                                                                                | 48/302 [00:06<00:26,  9.60it/s]Validate:  16%|██████████████████▍                                                                                               | 49/302 [00:06<00:26,  9.66it/s]Validate:  17%|██████████████████▊                                                                                               | 50/302 [00:06<00:26,  9.68it/s]Validate:  17%|███████████████████▋                                                                                              | 52/302 [00:06<00:25,  9.97it/s]Validate:  18%|████████████████████                                                                                              | 53/302 [00:06<00:26,  9.42it/s]Validate:  18%|████████████████████▍                                                                                             | 54/302 [00:06<00:26,  9.51it/s]Validate:  18%|████████████████████▊                                                                                             | 55/302 [00:06<00:25,  9.61it/s]Validate:  19%|█████████████████████▏                                                                                            | 56/302 [00:06<00:26,  9.43it/s]Validate:  19%|█████████████████████▌                                                                                            | 57/302 [00:07<00:25,  9.53it/s]Validate:  19%|█████████████████████▉                                                                                            | 58/302 [00:07<00:26,  9.37it/s]Validate:  20%|██████████████████████▎                                                                                           | 59/302 [00:07<00:25,  9.40it/s]Validate:  20%|██████████████████████▋                                                                                           | 60/302 [00:07<00:25,  9.48it/s]Validate:  20%|███████████████████████                                                                                           | 61/302 [00:07<00:25,  9.45it/s]Validate:  21%|███████████████████████▍                                                                                          | 62/302 [00:07<00:25,  9.38it/s]Validate:  21%|███████████████████████▊                                                                                          | 63/302 [00:07<00:27,  8.76it/s]Validate:  21%|████████████████████████▏                                                                                         | 64/302 [00:07<00:28,  8.27it/s]Validate:  22%|████████████████████████▌                                                                                         | 65/302 [00:08<00:30,  7.83it/s]Validate:  22%|████████████████████████▉                                                                                         | 66/302 [00:08<00:29,  8.07it/s]Validate:  22%|█████████████████████████▎                                                                                        | 67/302 [00:08<00:28,  8.33it/s]Validate:  23%|██████████████████████████                                                                                        | 69/302 [00:08<00:25,  9.02it/s]Validate:  23%|██████████████████████████▍                                                                                       | 70/302 [00:08<00:25,  9.21it/s]Validate:  24%|██████████████████████████▊                                                                                       | 71/302 [00:08<00:24,  9.32it/s]Validate:  24%|███████████████████████████▏                                                                                      | 72/302 [00:08<00:24,  9.39it/s]Validate:  24%|███████████████████████████▌                                                                                      | 73/302 [00:08<00:25,  9.05it/s]Validate:  25%|███████████████████████████▉                                                                                      | 74/302 [00:09<00:27,  8.43it/s]Validate:  25%|████████████████████████████▎                                                                                     | 75/302 [00:09<00:26,  8.48it/s]Validate:  25%|████████████████████████████▋                                                                                     | 76/302 [00:09<00:25,  8.86it/s]Validate:  25%|█████████████████████████████                                                                                     | 77/302 [00:09<00:26,  8.40it/s]Validate:  26%|█████████████████████████████▍                                                                                    | 78/302 [00:09<00:25,  8.68it/s]Validate:  26%|█████████████████████████████▊                                                                                    | 79/302 [00:09<00:25,  8.68it/s]Validate:  26%|██████████████████████████████▏                                                                                   | 80/302 [00:09<00:25,  8.68it/s]Validate:  27%|██████████████████████████████▌                                                                                   | 81/302 [00:09<00:25,  8.70it/s]Validate:  27%|██████████████████████████████▉                                                                                   | 82/302 [00:09<00:25,  8.63it/s]Validate:  27%|███████████████████████████████▎                                                                                  | 83/302 [00:10<00:25,  8.60it/s]Validate:  28%|███████████████████████████████▋                                                                                  | 84/302 [00:10<00:26,  8.18it/s]Validate:  28%|████████████████████████████████                                                                                  | 85/302 [00:10<00:25,  8.45it/s]Validate:  28%|████████████████████████████████▍                                                                                 | 86/302 [00:10<00:24,  8.75it/s]Validate:  29%|█████████████████████████████████▏                                                                                | 88/302 [00:10<00:23,  9.29it/s]Validate:  29%|█████████████████████████████████▌                                                                                | 89/302 [00:10<00:22,  9.31it/s]Validate:  30%|█████████████████████████████████▉                                                                                | 90/302 [00:10<00:22,  9.40it/s]Validate:  30%|██████████████████████████████████▎                                                                               | 91/302 [00:10<00:22,  9.54it/s]Validate:  30%|██████████████████████████████████▋                                                                               | 92/302 [00:11<00:22,  9.27it/s]Validate:  31%|███████████████████████████████████                                                                               | 93/302 [00:11<00:22,  9.12it/s]Validate:  31%|███████████████████████████████████▍                                                                              | 94/302 [00:11<00:22,  9.17it/s]Validate:  31%|███████████████████████████████████▊                                                                              | 95/302 [00:11<00:22,  9.22it/s]Validate:  32%|████████████████████████████████████▏                                                                             | 96/302 [00:11<00:22,  9.31it/s]Validate:  32%|████████████████████████████████████▉                                                                             | 98/302 [00:11<00:19, 10.37it/s]Validate:  33%|█████████████████████████████████████▍                                                                           | 100/302 [00:11<00:19, 10.47it/s]Validate:  34%|██████████████████████████████████████▏                                                                          | 102/302 [00:12<00:19, 10.32it/s]Validate:  34%|██████████████████████████████████████▉                                                                          | 104/302 [00:12<00:20,  9.89it/s]Validate:  35%|███████████████████████████████████████▋                                                                         | 106/302 [00:12<00:20,  9.77it/s]Validate:  35%|████████████████████████████████████████                                                                         | 107/302 [00:12<00:20,  9.44it/s]Validate:  36%|████████████████████████████████████████▍                                                                        | 108/302 [00:12<00:20,  9.33it/s]Validate:  36%|████████████████████████████████████████▊                                                                        | 109/302 [00:12<00:21,  9.07it/s]Validate:  36%|█████████████████████████████████████████▏                                                                       | 110/302 [00:12<00:21,  9.06it/s]Validate:  37%|█████████████████████████████████████████▌                                                                       | 111/302 [00:13<00:21,  8.90it/s]Validate:  37%|█████████████████████████████████████████▉                                                                       | 112/302 [00:13<00:21,  8.69it/s]Validate:  37%|██████████████████████████████████████████▎                                                                      | 113/302 [00:13<00:22,  8.39it/s]Validate:  38%|██████████████████████████████████████████▋                                                                      | 114/302 [00:13<00:22,  8.44it/s]Validate:  38%|███████████████████████████████████████████                                                                      | 115/302 [00:13<00:22,  8.43it/s]Validate:  38%|███████████████████████████████████████████▍                                                                     | 116/302 [00:13<00:21,  8.58it/s]Validate:  39%|████████████████████████████████████████████▏                                                                    | 118/302 [00:13<00:20,  8.97it/s]Validate:  39%|████████████████████████████████████████████▌                                                                    | 119/302 [00:13<00:19,  9.16it/s]Validate:  40%|████████████████████████████████████████████▉                                                                    | 120/302 [00:14<00:19,  9.12it/s]Validate:  40%|█████████████████████████████████████████████▎                                                                   | 121/302 [00:14<00:20,  8.96it/s]Validate:  40%|█████████████████████████████████████████████▋                                                                   | 122/302 [00:14<00:20,  8.93it/s]Validate:  41%|██████████████████████████████████████████████                                                                   | 123/302 [00:14<00:20,  8.65it/s]Validate:  41%|██████████████████████████████████████████████▍                                                                  | 124/302 [00:14<00:20,  8.74it/s]Validate:  41%|██████████████████████████████████████████████▊                                                                  | 125/302 [00:14<00:19,  8.96it/s]Validate:  42%|███████████████████████████████████████████████▏                                                                 | 126/302 [00:14<00:20,  8.69it/s]Validate:  42%|███████████████████████████████████████████████▌                                                                 | 127/302 [00:14<00:20,  8.66it/s]Validate:  42%|███████████████████████████████████████████████▉                                                                 | 128/302 [00:14<00:20,  8.62it/s]Validate:  43%|████████████████████████████████████████████████▎                                                                | 129/302 [00:15<00:19,  8.82it/s]Validate:  43%|████████████████████████████████████████████████▋                                                                | 130/302 [00:15<00:19,  8.77it/s]Validate:  43%|█████████████████████████████████████████████████                                                                | 131/302 [00:15<00:19,  8.82it/s]Validate:  44%|█████████████████████████████████████████████████▍                                                               | 132/302 [00:15<00:18,  9.00it/s]Validate:  44%|█████████████████████████████████████████████████▊                                                               | 133/302 [00:15<00:19,  8.58it/s]Validate:  44%|██████████████████████████████████████████████████▏                                                              | 134/302 [00:15<00:19,  8.79it/s]Validate:  45%|██████████████████████████████████████████████████▌                                                              | 135/302 [00:15<00:18,  9.02it/s]Validate:  45%|██████████████████████████████████████████████████▉                                                              | 136/302 [00:15<00:18,  9.15it/s]Validate:  45%|███████████████████████████████████████████████████▎                                                             | 137/302 [00:15<00:18,  9.07it/s]Validate:  46%|███████████████████████████████████████████████████▋                                                             | 138/302 [00:16<00:18,  9.06it/s]Validate:  46%|████████████████████████████████████████████████████                                                             | 139/302 [00:16<00:18,  9.00it/s]Validate:  46%|████████████████████████████████████████████████████▍                                                            | 140/302 [00:16<00:17,  9.20it/s]Validate:  47%|████████████████████████████████████████████████████▊                                                            | 141/302 [00:16<00:17,  9.15it/s]Validate:  47%|█████████████████████████████████████████████████████▏                                                           | 142/302 [00:16<00:17,  9.25it/s]Validate:  47%|█████████████████████████████████████████████████████▌                                                           | 143/302 [00:16<00:28,  5.53it/s]Validate:  48%|█████████████████████████████████████████████████████▉                                                           | 144/302 [00:16<00:25,  6.25it/s]Validate:  48%|██████████████████████████████████████████████████████▎                                                          | 145/302 [00:17<00:22,  6.86it/s]Validate:  48%|██████████████████████████████████████████████████████▋                                                          | 146/302 [00:17<00:21,  7.25it/s]Validate:  49%|███████████████████████████████████████████████████████                                                          | 147/302 [00:17<00:20,  7.53it/s]Validate:  49%|███████████████████████████████████████████████████████▍                                                         | 148/302 [00:17<00:19,  7.79it/s]Validate:  49%|███████████████████████████████████████████████████████▊                                                         | 149/302 [00:17<00:18,  8.09it/s]Validate:  50%|████████████████████████████████████████████████████████▏                                                        | 150/302 [00:17<00:18,  8.30it/s]Validate:  50%|████████████████████████████████████████████████████████▌                                                        | 151/302 [00:17<00:17,  8.47it/s]Validate:  50%|████████████████████████████████████████████████████████▊                                                        | 152/302 [00:17<00:17,  8.61it/s]Validate:  51%|█████████████████████████████████████████████████████████▏                                                       | 153/302 [00:18<00:18,  7.86it/s]Validate:  51%|█████████████████████████████████████████████████████████▌                                                       | 154/302 [00:18<00:18,  8.12it/s]Validate:  51%|█████████████████████████████████████████████████████████▉                                                       | 155/302 [00:18<00:18,  8.10it/s]Validate:  52%|██████████████████████████████████████████████████████████▎                                                      | 156/302 [00:18<00:17,  8.14it/s]Validate:  52%|██████████████████████████████████████████████████████████▋                                                      | 157/302 [00:18<00:17,  8.37it/s]Validate:  52%|███████████████████████████████████████████████████████████                                                      | 158/302 [00:18<00:16,  8.50it/s]Validate:  53%|███████████████████████████████████████████████████████████▍                                                     | 159/302 [00:18<00:16,  8.50it/s]Validate:  53%|███████████████████████████████████████████████████████████▊                                                     | 160/302 [00:18<00:16,  8.81it/s]Validate:  53%|████████████████████████████████████████████████████████████▏                                                    | 161/302 [00:18<00:15,  8.97it/s]Validate:  54%|████████████████████████████████████████████████████████████▌                                                    | 162/302 [00:19<00:15,  9.07it/s]Validate:  54%|████████████████████████████████████████████████████████████▉                                                    | 163/302 [00:19<00:16,  8.66it/s]Validate:  54%|█████████████████████████████████████████████████████████████▎                                                   | 164/302 [00:19<00:16,  8.53it/s]Validate:  55%|█████████████████████████████████████████████████████████████▋                                                   | 165/302 [00:19<00:15,  8.69it/s]Validate:  55%|██████████████████████████████████████████████████████████████                                                   | 166/302 [00:19<00:15,  8.92it/s]Validate:  55%|██████████████████████████████████████████████████████████████▍                                                  | 167/302 [00:19<00:15,  8.94it/s]Validate:  56%|██████████████████████████████████████████████████████████████▊                                                  | 168/302 [00:19<00:14,  8.97it/s]Validate:  56%|███████████████████████████████████████████████████████████████▏                                                 | 169/302 [00:19<00:14,  9.04it/s]Validate:  56%|███████████████████████████████████████████████████████████████▌                                                 | 170/302 [00:19<00:14,  9.12it/s]Validate:  57%|███████████████████████████████████████████████████████████████▉                                                 | 171/302 [00:20<00:14,  9.32it/s]Validate:  57%|████████████████████████████████████████████████████████████████▎                                                | 172/302 [00:20<00:14,  9.19it/s]Validate:  57%|████████████████████████████████████████████████████████████████▋                                                | 173/302 [00:20<00:14,  9.11it/s]Validate:  58%|█████████████████████████████████████████████████████████████████                                                | 174/302 [00:20<00:14,  9.14it/s]Validate:  58%|█████████████████████████████████████████████████████████████████▍                                               | 175/302 [00:20<00:14,  9.06it/s]Validate:  58%|█████████████████████████████████████████████████████████████████▊                                               | 176/302 [00:20<00:14,  8.94it/s]Validate:  59%|██████████████████████████████████████████████████████████████████▏                                              | 177/302 [00:20<00:13,  9.09it/s]Validate:  59%|██████████████████████████████████████████████████████████████████▌                                              | 178/302 [00:20<00:13,  9.33it/s]Validate:  59%|██████████████████████████████████████████████████████████████████▉                                              | 179/302 [00:20<00:13,  9.31it/s]Validate:  60%|███████████████████████████████████████████████████████████████████▎                                             | 180/302 [00:21<00:13,  9.19it/s]Validate:  60%|███████████████████████████████████████████████████████████████████▋                                             | 181/302 [00:21<00:13,  9.30it/s]Validate:  60%|████████████████████████████████████████████████████████████████████                                             | 182/302 [00:21<00:13,  9.05it/s]Validate:  61%|████████████████████████████████████████████████████████████████████▍                                            | 183/302 [00:21<00:13,  8.95it/s]Validate:  61%|████████████████████████████████████████████████████████████████████▊                                            | 184/302 [00:21<00:13,  8.91it/s]Validate:  61%|█████████████████████████████████████████████████████████████████████▏                                           | 185/302 [00:21<00:13,  8.86it/s]Validate:  62%|█████████████████████████████████████████████████████████████████████▌                                           | 186/302 [00:21<00:12,  8.95it/s]Validate:  62%|█████████████████████████████████████████████████████████████████████▉                                           | 187/302 [00:21<00:12,  8.98it/s]Validate:  62%|██████████████████████████████████████████████████████████████████████▎                                          | 188/302 [00:21<00:12,  9.17it/s]Validate:  63%|██████████████████████████████████████████████████████████████████████▋                                          | 189/302 [00:22<00:12,  8.86it/s]Validate:  63%|███████████████████████████████████████████████████████████████████████                                          | 190/302 [00:22<00:12,  8.79it/s]Validate:  63%|███████████████████████████████████████████████████████████████████████▍                                         | 191/302 [00:22<00:12,  8.80it/s]Validate:  64%|███████████████████████████████████████████████████████████████████████▊                                         | 192/302 [00:22<00:12,  8.92it/s]Validate:  64%|████████████████████████████████████████████████████████████████████████▏                                        | 193/302 [00:22<00:12,  9.02it/s]Validate:  64%|████████████████████████████████████████████████████████████████████████▌                                        | 194/302 [00:22<00:12,  8.93it/s]Validate:  65%|████████████████████████████████████████████████████████████████████████▉                                        | 195/302 [00:22<00:12,  8.80it/s]Validate:  65%|█████████████████████████████████████████████████████████████████████████▎                                       | 196/302 [00:22<00:11,  8.87it/s]Validate:  65%|█████████████████████████████████████████████████████████████████████████▋                                       | 197/302 [00:22<00:12,  8.68it/s]Validate:  66%|██████████████████████████████████████████████████████████████████████████                                       | 198/302 [00:23<00:11,  8.71it/s]Validate:  66%|██████████████████████████████████████████████████████████████████████████▍                                      | 199/302 [00:23<00:11,  8.89it/s]Validate:  66%|██████████████████████████████████████████████████████████████████████████▊                                      | 200/302 [00:23<00:11,  8.94it/s]Validate:  67%|███████████████████████████████████████████████████████████████████████████▏                                     | 201/302 [00:23<00:11,  8.96it/s]Validate:  67%|███████████████████████████████████████████████████████████████████████████▉                                     | 203/302 [00:23<00:11,  8.78it/s]Validate:  68%|████████████████████████████████████████████████████████████████████████████▎                                    | 204/302 [00:23<00:11,  8.61it/s]Validate:  68%|████████████████████████████████████████████████████████████████████████████▋                                    | 205/302 [00:23<00:11,  8.73it/s]Validate:  68%|█████████████████████████████████████████████████████████████████████████████                                    | 206/302 [00:24<00:10,  8.94it/s]Validate:  69%|█████████████████████████████████████████████████████████████████████████████▍                                   | 207/302 [00:24<00:10,  9.16it/s]Validate:  69%|██████████████████████████████████████████████████████████████████████████████▏                                  | 209/302 [00:24<00:09,  9.49it/s]Validate:  70%|██████████████████████████████████████████████████████████████████████████████▌                                  | 210/302 [00:24<00:09,  9.35it/s]Validate:  70%|██████████████████████████████████████████████████████████████████████████████▉                                  | 211/302 [00:24<00:09,  9.26it/s]Validate:  70%|███████████████████████████████████████████████████████████████████████████████▎                                 | 212/302 [00:24<00:09,  9.05it/s]Validate:  71%|███████████████████████████████████████████████████████████████████████████████▋                                 | 213/302 [00:24<00:10,  8.74it/s]Validate:  71%|████████████████████████████████████████████████████████████████████████████████                                 | 214/302 [00:24<00:09,  8.96it/s]Validate:  71%|████████████████████████████████████████████████████████████████████████████████▍                                | 215/302 [00:24<00:09,  9.17it/s]Validate:  72%|████████████████████████████████████████████████████████████████████████████████▊                                | 216/302 [00:25<00:09,  9.34it/s]Validate:  72%|█████████████████████████████████████████████████████████████████████████████████▏                               | 217/302 [00:25<00:09,  9.41it/s]Validate:  72%|█████████████████████████████████████████████████████████████████████████████████▌                               | 218/302 [00:25<00:08,  9.50it/s]Validate:  73%|█████████████████████████████████████████████████████████████████████████████████▉                               | 219/302 [00:25<00:08,  9.52it/s]Validate:  73%|██████████████████████████████████████████████████████████████████████████████████▎                              | 220/302 [00:25<00:08,  9.45it/s]Validate:  73%|██████████████████████████████████████████████████████████████████████████████████▋                              | 221/302 [00:25<00:08,  9.23it/s]Validate:  74%|███████████████████████████████████████████████████████████████████████████████████                              | 222/302 [00:25<00:08,  9.09it/s]Validate:  74%|███████████████████████████████████████████████████████████████████████████████████▍                             | 223/302 [00:25<00:08,  9.15it/s]Validate:  74%|███████████████████████████████████████████████████████████████████████████████████▊                             | 224/302 [00:25<00:08,  9.28it/s]Validate:  75%|████████████████████████████████████████████████████████████████████████████████████▏                            | 225/302 [00:26<00:08,  9.37it/s]Validate:  75%|████████████████████████████████████████████████████████████████████████████████████▌                            | 226/302 [00:26<00:08,  9.43it/s]Validate:  75%|████████████████████████████████████████████████████████████████████████████████████▉                            | 227/302 [00:26<00:07,  9.48it/s]Validate:  75%|█████████████████████████████████████████████████████████████████████████████████████▎                           | 228/302 [00:26<00:07,  9.52it/s]Validate:  76%|█████████████████████████████████████████████████████████████████████████████████████▋                           | 229/302 [00:26<00:07,  9.57it/s]Validate:  76%|██████████████████████████████████████████████████████████████████████████████████████                           | 230/302 [00:26<00:07,  9.61it/s]Validate:  76%|██████████████████████████████████████████████████████████████████████████████████████▍                          | 231/302 [00:26<00:07,  9.49it/s]Validate:  77%|██████████████████████████████████████████████████████████████████████████████████████▊                          | 232/302 [00:26<00:07,  9.49it/s]Validate:  77%|███████████████████████████████████████████████████████████████████████████████████████▏                         | 233/302 [00:26<00:07,  8.90it/s]Validate:  77%|███████████████████████████████████████████████████████████████████████████████████████▌                         | 234/302 [00:27<00:07,  9.03it/s]Validate:  78%|███████████████████████████████████████████████████████████████████████████████████████▉                         | 235/302 [00:27<00:07,  8.90it/s]Validate:  78%|████████████████████████████████████████████████████████████████████████████████████████▎                        | 236/302 [00:27<00:07,  8.80it/s]Validate:  78%|████████████████████████████████████████████████████████████████████████████████████████▋                        | 237/302 [00:27<00:07,  8.72it/s]Validate:  79%|█████████████████████████████████████████████████████████████████████████████████████████                        | 238/302 [00:27<00:07,  8.70it/s]Validate:  79%|█████████████████████████████████████████████████████████████████████████████████████████▍                       | 239/302 [00:27<00:07,  8.71it/s]Validate:  79%|█████████████████████████████████████████████████████████████████████████████████████████▊                       | 240/302 [00:27<00:07,  8.43it/s]Validate:  80%|██████████████████████████████████████████████████████████████████████████████████████████▏                      | 241/302 [00:27<00:07,  8.47it/s]Validate:  80%|██████████████████████████████████████████████████████████████████████████████████████████▌                      | 242/302 [00:27<00:06,  8.63it/s]Validate:  80%|██████████████████████████████████████████████████████████████████████████████████████████▉                      | 243/302 [00:28<00:07,  8.21it/s]Validate:  81%|███████████████████████████████████████████████████████████████████████████████████████████▎                     | 244/302 [00:28<00:07,  8.22it/s]Validate:  81%|███████████████████████████████████████████████████████████████████████████████████████████▋                     | 245/302 [00:28<00:06,  8.24it/s]Validate:  81%|████████████████████████████████████████████████████████████████████████████████████████████                     | 246/302 [00:28<00:06,  8.64it/s]Validate:  82%|████████████████████████████████████████████████████████████████████████████████████████████▍                    | 247/302 [00:28<00:06,  8.96it/s]Validate:  82%|████████████████████████████████████████████████████████████████████████████████████████████▊                    | 248/302 [00:28<00:05,  9.16it/s]Validate:  82%|█████████████████████████████████████████████████████████████████████████████████████████████▏                   | 249/302 [00:28<00:05,  9.28it/s]Validate:  83%|█████████████████████████████████████████████████████████████████████████████████████████████▌                   | 250/302 [00:28<00:05,  9.44it/s]Validate:  83%|█████████████████████████████████████████████████████████████████████████████████████████████▉                   | 251/302 [00:28<00:05,  9.54it/s]Validate:  83%|██████████████████████████████████████████████████████████████████████████████████████████████▎                  | 252/302 [00:29<00:05,  9.59it/s]Validate:  84%|██████████████████████████████████████████████████████████████████████████████████████████████▋                  | 253/302 [00:29<00:05,  9.15it/s]Validate:  84%|███████████████████████████████████████████████████████████████████████████████████████████████                  | 254/302 [00:29<00:05,  9.01it/s]Validate:  84%|███████████████████████████████████████████████████████████████████████████████████████████████▍                 | 255/302 [00:29<00:05,  9.17it/s]Validate:  85%|███████████████████████████████████████████████████████████████████████████████████████████████▊                 | 256/302 [00:29<00:04,  9.36it/s]Validate:  85%|████████████████████████████████████████████████████████████████████████████████████████████████▏                | 257/302 [00:29<00:04,  9.34it/s]Validate:  85%|████████████████████████████████████████████████████████████████████████████████████████████████▌                | 258/302 [00:29<00:04,  9.36it/s]Validate:  86%|████████████████████████████████████████████████████████████████████████████████████████████████▉                | 259/302 [00:29<00:04,  9.35it/s]Validate:  86%|█████████████████████████████████████████████████████████████████████████████████████████████████▎               | 260/302 [00:29<00:04,  9.08it/s]Validate:  86%|█████████████████████████████████████████████████████████████████████████████████████████████████▋               | 261/302 [00:30<00:04,  9.23it/s]Validate:  87%|██████████████████████████████████████████████████████████████████████████████████████████████████               | 262/302 [00:30<00:04,  9.26it/s]Validate:  87%|██████████████████████████████████████████████████████████████████████████████████████████████████▍              | 263/302 [00:30<00:04,  9.31it/s]Validate:  87%|██████████████████████████████████████████████████████████████████████████████████████████████████▊              | 264/302 [00:30<00:04,  9.34it/s]Validate:  88%|███████████████████████████████████████████████████████████████████████████████████████████████████▏             | 265/302 [00:30<00:03,  9.36it/s]Validate:  88%|███████████████████████████████████████████████████████████████████████████████████████████████████▌             | 266/302 [00:30<00:03,  9.40it/s]Validate:  88%|███████████████████████████████████████████████████████████████████████████████████████████████████▉             | 267/302 [00:30<00:03,  9.31it/s]Validate:  89%|████████████████████████████████████████████████████████████████████████████████████████████████████▎            | 268/302 [00:30<00:03,  9.32it/s]Validate:  89%|████████████████████████████████████████████████████████████████████████████████████████████████████▋            | 269/302 [00:30<00:03,  9.11it/s]Validate:  89%|█████████████████████████████████████████████████████████████████████████████████████████████████████            | 270/302 [00:31<00:03,  9.13it/s]Validate:  90%|█████████████████████████████████████████████████████████████████████████████████████████████████████▍           | 271/302 [00:31<00:03,  9.02it/s]Validate:  90%|█████████████████████████████████████████████████████████████████████████████████████████████████████▊           | 272/302 [00:31<00:03,  8.72it/s]Validate:  90%|██████████████████████████████████████████████████████████████████████████████████████████████████████▏          | 273/302 [00:31<00:03,  8.47it/s]Validate:  91%|██████████████████████████████████████████████████████████████████████████████████████████████████████▌          | 274/302 [00:31<00:03,  8.56it/s]Validate:  91%|██████████████████████████████████████████████████████████████████████████████████████████████████████▉          | 275/302 [00:31<00:03,  8.54it/s]Validate:  91%|███████████████████████████████████████████████████████████████████████████████████████████████████████▎         | 276/302 [00:31<00:02,  8.72it/s]Validate:  92%|███████████████████████████████████████████████████████████████████████████████████████████████████████▋         | 277/302 [00:31<00:02,  8.97it/s]Validate:  92%|████████████████████████████████████████████████████████████████████████████████████████████████████████         | 278/302 [00:31<00:02,  9.12it/s]Validate:  92%|████████████████████████████████████████████████████████████████████████████████████████████████████████▍        | 279/302 [00:32<00:02,  9.22it/s]Validate:  93%|████████████████████████████████████████████████████████████████████████████████████████████████████████▊        | 280/302 [00:32<00:02,  9.38it/s]Validate:  93%|█████████████████████████████████████████████████████████████████████████████████████████████████████████▏       | 281/302 [00:32<00:02,  9.22it/s]Validate:  93%|█████████████████████████████████████████████████████████████████████████████████████████████████████████▌       | 282/302 [00:32<00:02,  9.00it/s]Validate:  94%|█████████████████████████████████████████████████████████████████████████████████████████████████████████▉       | 283/302 [00:32<00:02,  8.95it/s]Validate:  94%|██████████████████████████████████████████████████████████████████████████████████████████████████████████▎      | 284/302 [00:32<00:01,  9.13it/s]Validate:  94%|██████████████████████████████████████████████████████████████████████████████████████████████████████████▋      | 285/302 [00:32<00:01,  9.24it/s]Validate:  95%|███████████████████████████████████████████████████████████████████████████████████████████████████████████      | 286/302 [00:32<00:01,  9.37it/s]Validate:  95%|███████████████████████████████████████████████████████████████████████████████████████████████████████████▍     | 287/302 [00:32<00:01,  9.51it/s]Validate:  96%|████████████████████████████████████████████████████████████████████████████████████████████████████████████▏    | 289/302 [00:33<00:01,  9.57it/s]Validate:  96%|████████████████████████████████████████████████████████████████████████████████████████████████████████████▌    | 290/302 [00:33<00:01,  9.58it/s]Validate:  96%|████████████████████████████████████████████████████████████████████████████████████████████████████████████▉    | 291/302 [00:33<00:01,  9.48it/s]Validate:  97%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████▎   | 292/302 [00:33<00:01,  9.38it/s]Validate:  97%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████▋   | 293/302 [00:33<00:00,  9.28it/s]Validate:  97%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████   | 294/302 [00:33<00:00,  9.41it/s]Validate:  98%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████▍  | 295/302 [00:33<00:00,  9.37it/s]Validate:  98%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████▊  | 296/302 [00:33<00:00,  9.33it/s]Validate:  98%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████▏ | 297/302 [00:33<00:00,  9.43it/s]Validate:  99%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████▌ | 298/302 [00:34<00:00,  9.53it/s]Validate:  99%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████▉ | 299/302 [00:34<00:00,  9.64it/s]Validate:  99%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████▎| 300/302 [00:34<00:00,  9.70it/s]Validate: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████▋| 301/302 [00:34<00:00,  9.70it/s]Validate: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 302/302 [00:34<00:00,  6.26it/s]Validate: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 302/302 [00:34<00:00,  8.70it/s]
+2026-04-17 17:52:19,753 - clrnet.utils.culane_metric - INFO - Calculating metric for List: ./data/RaniyLane/list/test_split/test0_normal.txt
+Generating prediction output...
+Traceback (most recent call last):
+  File "main.py", line 75, in <module>
+    main()
+  File "main.py", line 39, in main
+    runner.train()
+  File "/root/autodl-tmp/clrnet/clrnet/engine/runner.py", line 119, in train
+    self.validate()
+  File "/root/autodl-tmp/clrnet/clrnet/engine/runner.py", line 163, in validate
+    metric = self.val_loader.dataset.evaluate(predictions,
+  File "/root/autodl-tmp/clrnet/clrnet/datasets/culane.py", line 132, in evaluate
+    result = culane_metric.eval_predictions(output_basedir,
+  File "/root/autodl-tmp/clrnet/clrnet/utils/culane_metric.py", line 146, in eval_predictions
+    predictions = load_culane_data(pred_dir, list_path)
+  File "/root/autodl-tmp/clrnet/clrnet/utils/culane_metric.py", line 131, in load_culane_data
+    img_data = load_culane_img_data(path)
+  File "/root/autodl-tmp/clrnet/clrnet/utils/culane_metric.py", line 110, in load_culane_img_data
+    with open(path, 'r') as data_file:
+FileNotFoundError: [Errno 2] No such file or directory: 'work_dirs/clr/r34_rainlane_fgm_stage2/20260417_174230_lr_2e-04_b_24/test_run/s2_1308000.lines.txt'

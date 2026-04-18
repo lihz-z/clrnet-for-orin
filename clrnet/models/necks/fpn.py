@@ -5,7 +5,8 @@ import torch.nn.functional as F
 
 from mmcv.cnn import ConvModule
 from ..registry import NECKS
-
+# 修改：导入 LRFBlock 替代原来的 FREBlock
+from clrnet.models.utils.lrf_block import LRFBlock
 
 @NECKS.register_module
 class FPN(nn.Module):
@@ -27,7 +28,8 @@ class FPN(nn.Module):
                  init_cfg=dict(type='Xavier',
                                layer='Conv2d',
                                distribution='uniform'),
-                 cfg=None):
+                 cfg=None,
+                 lrf_block=None):
         super(FPN, self).__init__()
         assert isinstance(in_channels, list)
         self.in_channels = in_channels
@@ -38,7 +40,34 @@ class FPN(nn.Module):
         self.relu_before_extra_convs = relu_before_extra_convs
         self.no_norm_on_lateral = no_norm_on_lateral
         self.upsample_cfg = upsample_cfg.copy()
-
+        
+        # ========== 新增：处理 LRFBlock 配置 ==========
+        self.lrf_block = None
+        lrf_cfg = None
+        if lrf_block is not None:
+            lrf_cfg = lrf_block
+        elif cfg is not None and 'lrf_block' in cfg:
+            lrf_cfg = cfg['lrf_block']
+        
+        self.lrf_apply_levels = None
+        if lrf_cfg is not None:
+            channels = lrf_cfg.get('channels', out_channels)
+            freq_thresh = lrf_cfg.get('freq_gate_threshold', 0.3)
+            dir_bins = lrf_cfg.get('direction_bins', 4)
+            res_scale_init = lrf_cfg.get('res_scale_init', 0.1)
+            enable_freq = lrf_cfg.get('enable_freq', True)
+            enable_dir = lrf_cfg.get('enable_dir', True)
+            self.lrf_apply_levels = lrf_cfg.get('apply_levels', None)
+            self.lrf_block = LRFBlock(
+                channels=channels,
+                freq_gate_threshold=freq_thresh,
+                direction_bins=dir_bins,
+                res_scale_init=res_scale_init,
+                enable_freq=enable_freq,
+                enable_dir=enable_dir
+            )
+        # =============================================
+        
         if end_level == -1:
             self.backbone_end_level = self.num_ins
             assert num_outs >= self.num_ins - start_level
@@ -164,4 +193,15 @@ class FPN(nn.Module):
                         outs.append(self.fpn_convs[i](F.relu(outs[-1])))
                     else:
                         outs.append(self.fpn_convs[i](outs[-1]))
+        # ========== 应用 LRFBlock（如果存在） ==========
+        if self.lrf_block is not None:
+            if self.lrf_apply_levels is None:
+                outs = [self.lrf_block(out) for out in outs]
+            else:
+                apply_levels = set(self.lrf_apply_levels)
+                outs = [
+                    self.lrf_block(out) if i in apply_levels else out
+                    for i, out in enumerate(outs)
+                ]
+        # =============================================
         return tuple(outs)

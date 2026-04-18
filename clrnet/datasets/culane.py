@@ -115,6 +115,7 @@ class CULane(BaseDataset):
         loss_lines = [[], [], [], []]
         print('Generating prediction output...')
         for idx, pred in enumerate(predictions):
+            #print(f"img_name: {self.data_infos[idx]['img_name']}")
             output_dir = os.path.join(
                 output_basedir,
                 os.path.dirname(self.data_infos[idx]['img_name']))
@@ -122,7 +123,7 @@ class CULane(BaseDataset):
                 self.data_infos[idx]['img_name'])[:-3] + 'lines.txt'
             os.makedirs(output_dir, exist_ok=True)
             output = self.get_prediction_string(pred)
-
+            
             with open(os.path.join(output_dir, output_filename),
                       'w') as out_file:
                 out_file.write(output)

@@ -1,0 +1,4 @@
+usage: main.py [-h] [--work_dirs WORK_DIRS] [--load_from LOAD_FROM] [--resume_from RESUME_FROM] [--finetune_from FINETUNE_FROM] [--view] [--validate] [--test]
+               [--gpus GPUS [GPUS ...]] [--seed SEED]
+               config
+main.py: error: unrecognized arguments: --work-dir work_dirs/xxx
