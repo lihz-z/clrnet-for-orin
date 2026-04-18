@@ -3,7 +3,6 @@ import numpy as np
 import cv2
 import os
 import json
-import torchvision
 from .base_dataset import BaseDataset
 from clrnet.utils.tusimple_metric import LaneEval
 from .registry import DATASETS

@@ -1,0 +1,5 @@
+Method,F1 (%),Precision (%),Recall (%),Best Epoch,Source
+CLRNet baseline,59.56,59.02,60.1,20,readme_summary
+CLRNet + Frequency Gate,59.65,59.43,59.88,20,readme_summary
+CLRNet + Directional Attention,59.82,59.57,60.06,22,raw_log+readme_summary
+CLRNet + FGM,59.7,59.48,59.93,22,readme_summary

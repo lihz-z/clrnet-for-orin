@@ -1,0 +1,22 @@
+{
+  "mode": "ONNX Runtime FP32",
+  "onnx": "deploy_artifacts/clrnet_da_only.onnx",
+  "providers": [
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider"
+  ],
+  "input_shape": [
+    1,
+    3,
+    320,
+    800
+  ],
+  "warmup_iters": 50,
+  "benchmark_iters": 200,
+  "avg_latency_ms": 29.8266,
+  "median_latency_ms": 30.1256,
+  "min_latency_ms": 23.4404,
+  "max_latency_ms": 49.4851,
+  "fps": 33.5271,
+  "peak_gpu_mem_mb": 499.7422
+}

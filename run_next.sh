@@ -1,9 +1,16 @@
-#!/bin/bash
-CURRENT_PID=887752
-echo "等待主进程 $CURRENT_PID 结束..."
-while kill -0 $CURRENT_PID 2>/dev/null; do sleep 10; done
-echo "开始后续三个训练..."
-python main.py configs/clrnet/clr_resnet34_rainlane_da_only.py --gpus 0 > da_only.log 2>&1
-python main.py configs/clrnet/clr_resnet34_rainlane_fgm_stage2.py --gpus 0 > fgm_stage2.log 2>&1
-python main.py configs/clrnet/clr_resnet34_rainlane_fg_only.py --gpus 0 > fg_only.log 2>&1
-echo "全部完成！"
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+source "$ROOT_DIR/.venv/bin/activate"
+export CUDA_HOME=/usr/local/cuda
+export TORCH_CUDA_ARCH_LIST=8.7
+export PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
+if [ "$#" -eq 0 ]; then
+  exec bash
+fi
+
+exec "$@"

@@ -81,6 +81,12 @@ def load_model(config_path: str, checkpoint_path: str, device: str):
     else:
         state_dict = ckpt
 
+    if any(key.startswith("module.") for key in state_dict.keys()):
+        state_dict = {
+            (key[len("module."):] if key.startswith("module.") else key): value
+            for key, value in state_dict.items()
+        }
+
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
 
     model = model.to(device)

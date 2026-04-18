@@ -1,0 +1,5 @@
+# Stage-2 Current Status
+
+| Run | Status | Issue | Note |
+| --- | --- | --- | --- |
+| CLRNet-FGM stage2 | interrupted | [Errno 2] No such file or directory: 'work_dirs/clr/r34_rainlane_fgm_stage2/20260417_174230_lr_2e-04_b_24/test_run/s2_1308000.lines.txt' | Stage-2 finetuning log exists, but validation crashed before a stable metric was written. |

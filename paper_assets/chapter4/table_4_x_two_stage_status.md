@@ -1,0 +1,6 @@
+# One-stage vs Stage-2 Status
+
+| Run | Work Dir | Best F1 (%) | Best Epoch | Duration (h) | Status | Source |
+| --- | --- | --- | --- | --- | --- | --- |
+| FGM one-stage | work_dirs/clr/r34_rainlane_new | 59.7000 | 22 | 4.6636 | completed | readme_summary |
+| CLRNet-FGM stage2 | work_dirs/clr/r34_rainlane_fgm_stage2 | N/A | N/A | N/A | interrupted | raw_log |

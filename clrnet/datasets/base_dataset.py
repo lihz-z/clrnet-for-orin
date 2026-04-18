@@ -4,7 +4,6 @@ import numpy as np
 import cv2
 import torch
 from torch.utils.data import Dataset
-import torchvision
 import logging
 from .registry import DATASETS
 from .process import Process

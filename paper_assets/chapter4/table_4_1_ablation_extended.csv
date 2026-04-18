@@ -1,0 +1,5 @@
+Method,Best F1 (%),Final F1 (%),Final-Best (pp),Duration (h),Work Dir,Source
+CLRNet baseline,59.56,59.4,-0.16,4.58,work_dirs/clr/r34_rainlane_baseline,readme_summary
+CLRNet + Frequency Gate,59.65,59.23,-0.423,4.6214,work_dirs/clr/r34_rainlane_fg_only,readme_summary
+CLRNet + Directional Attention,59.82,59.68,-0.135,4.3864,work_dirs/clr/r34_rainlane_da_only,raw_log+readme_summary
+CLRNet + FGM,59.7,59.28,-0.424,4.6636,work_dirs/clr/r34_rainlane_new,readme_summary

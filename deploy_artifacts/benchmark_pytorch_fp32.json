@@ -1,0 +1,23 @@
+{
+  "mode": "PyTorch FP32",
+  "config": "configs/clrnet/clr_resnet34_rainlane_da_only.py",
+  "checkpoint": "check_point/21.pth",
+  "device": "cuda:0",
+  "input_shape": [
+    1,
+    3,
+    320,
+    800
+  ],
+  "warmup_iters": 50,
+  "benchmark_iters": 200,
+  "avg_latency_ms": 39.3418,
+  "median_latency_ms": 39.0433,
+  "min_latency_ms": 37.2814,
+  "max_latency_ms": 48.0235,
+  "fps": 25.4183,
+  "peak_gpu_mem_mb": 127.687,
+  "current_gpu_mem_mb": 95.7441,
+  "missing_key_count": 0,
+  "unexpected_key_count": 0
+}
